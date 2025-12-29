@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CryptoLens - Top 7 Crypto Tracker</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #4CAF50;
+            margin-bottom: 10px;
+            font-size: 36px;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .coins-container {
+            display: grid;
+            gap: 15px;
+        }
+        
+        .coin {
+            background-color: #2d2d2d;
+            padding: 20px;
+            border-radius: 10px;
+            border: 2px solid #444;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: border-color 0.3s ease;
+        }
+        
+        .coin:hover {
+            border-color: #4CAF50;
+        }
+        
+        .coin-info {
+            flex: 1;
+        }
+        
+        .coin-name {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .coin-symbol {
+            color: #888;
+            font-size: 14px;
+        }
+        
+        .coin-data {
+            text-align: right;
+        }
+        
+        .price {
+            font-size: 28px;
+            font-weight: bold;
+            color: #4CAF50;
+            margin-bottom: 5px;
+        }
+        
+        .change {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .positive {
+            color: #4CAF50;
+        }
+        
+        .negative {
+            color: #ff4444;
+        }
+        
+        .loading {
+            color: #888;
+        }
+        
+        .last-update {
+            text-align: center;
+            color: #888;
+            margin-top: 30px;
+            font-size: 14px;
+            padding: 15px;
+            background-color: #2d2d2d;
+            border-radius: 8px;
+        }
+        
+        .error-message {
+            background-color: #ff4444;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+            display: none;
+        }
+        
+        /* Mobile responsive */
+        @media (max-width: 600px) {
+            body {
+                padding: 15px;
+            }
+            
+            h1 {
+                font-size: 28px;
+            }
+            
+            .coin {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .coin-data {
+                text-align: left;
+                margin-top: 10px;
+            }
+            
+            .price {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>🚀 CryptoLens</h1>
+    <div class="subtitle">Live crypto prices • Updates every 30 seconds</div>
+    
+    <div class="error-message" id="error-message"></div>
+    
+    <div class="coins-container" id="coins-container">
+        <!-- Coins will be inserted here dynamically -->
+    </div>
+
+    <div class="last-update">
+        Last updated: <span id="last-update">Loading...</span>
+    </div>
+
+    <script>
+        // Configuration
+        const COINS = [
+            { id: 'bitcoin', name: 'Bitcoin', symbol: 'BTC' },
+            { id: 'ethereum', name: 'Ethereum', symbol: 'ETH' },
+            { id: 'tether', name: 'Tether', symbol: 'USDT' },
+            { id: 'solana', name: 'Solana', symbol: 'SOL' },
+            { id: 'binancecoin', name: 'BNB', symbol: 'BNB' },
+            { id: 'ripple', name: 'XRP', symbol: 'XRP' },
+            { id: 'usd-coin', name: 'USD Coin', symbol: 'USDC' }
+        ];
+        
+        const REFRESH_INTERVAL_MS = 30000; // 30 seconds
+        const API_BASE = 'https://api.coingecko.com/api/v3/simple/price';
+        
+        // Build API URL
+        const coinIds = COINS.map(c => c.id).join(',');
+        const API_URL = `${API_BASE}?ids=${coinIds}&vs_currencies=usd&include_24hr_change=true`;
+        
+        // State
+        let priceData = {};
+        
+        // Create coin elements
+        function initializeCoins() {
+            const container = document.getElementById('coins-container');
+            
+            COINS.forEach(coin => {
+                const coinDiv = document.createElement('div');
+                coinDiv.className = 'coin';
+                coinDiv.innerHTML = `
+                    <div class="coin-info">
+                        <div class="coin-name">${coin.name}</div>
+                        <div class="coin-symbol">${coin.symbol}</div>
+                    </div>
+                    <div class="coin-data">
+                        <div class="price loading" id="price-${coin.id}">Loading...</div>
+                        <div class="change" id="change-${coin.id}">--</div>
+                    </div>
+                `;
+                container.appendChild(coinDiv);
+            });
+        }
+        
+        // Format currency
+        function formatCurrency(value) {
+            if (value >= 1) {
+                return value.toLocaleString('en-US', {
+                    style: 'currency',
+                    currency: 'USD',
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+            } else {
+                // For smaller values, show more decimals
+                return value.toLocaleString('en-US', {
+                    style: 'currency',
+                    currency: 'USD',
+                    minimumFractionDigits: 4,
+                    maximumFractionDigits: 6
+                });
+            }
+        }
+        
+        // Update price element with animation
+        function updatePrice(coinId, newPrice) {
+            const priceElem = document.getElementById(`price-${coinId}`);
+            if (!priceElem) return;
+            
+            const oldPrice = priceData[coinId];
+            priceData[coinId] = newPrice;
+            
+            priceElem.textContent = formatCurrency(newPrice);
+            priceElem.classList.remove('loading');
+            
+            // Flash green/red on price change
+            if (oldPrice && oldPrice !== newPrice) {
+                priceElem.style.transition = 'color 0.3s ease';
+                priceElem.style.color = newPrice > oldPrice ? '#4CAF50' : '#ff4444';
+                setTimeout(() => {
+                    priceElem.style.color = '#4CAF50';
+                }, 300);
+            }
+        }
+        
+        // Update change element
+        function updateChange(coinId, change) {
+            const changeElem = document.getElementById(`change-${coinId}`);
+            if (!changeElem) return;
+            
+            const num = Number(change);
+            if (isNaN(num)) {
+                changeElem.textContent = '--';
+                changeElem.classList.remove('positive', 'negative');
+                return;
+            }
+            
+            const text = (num >= 0 ? '+' : '') + num.toFixed(2) + '%';
+            changeElem.textContent = text;
+            changeElem.classList.toggle('positive', num >= 0);
+            changeElem.classList.toggle('negative', num < 0);
+        }
+        
+        // Show error message
+        function showError(message) {
+            const errorElem = document.getElementById('error-message');
+            errorElem.textContent = message;
+            errorElem.style.display = 'block';
+            setTimeout(() => {
+                errorElem.style.display = 'none';
+            }, 5000);
+        }
+        
+        // Fetch prices from API
+        async function fetchPrices() {
+            try {
+                const res = await fetch(API_URL, { 
+                    cache: 'no-store',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                if (!res.ok) {
+                    throw new Error(`API returned ${res.status}`);
+                }
+                
+                const data = await res.json();
+                
+                // Update each coin
+                COINS.forEach(coin => {
+                    const coinData = data[coin.id];
+                    if (coinData && typeof coinData.usd === 'number') {
+                        updatePrice(coin.id, coinData.usd);
+                        updateChange(coin.id, coinData.usd_24h_change);
+                    } else {
+                        document.getElementById(`price-${coin.id}`).textContent = 'N/A';
+                        document.getElementById(`price-${coin.id}`).classList.remove('loading');
+                    }
+                });
+                
+                // Update last update time
+                document.getElementById('last-update').textContent = new Date().toLocaleString();
+                
+            } catch (err) {
+                console.error('Failed to fetch prices:', err);
+                showError('Failed to fetch prices. Retrying in 30 seconds...');
+                
+                // Show error state but don't clear existing prices
+                document.getElementById('last-update').textContent = 'Error - ' + new Date().toLocaleString();
+            }
+        }
+        
+        // Initialize and start
+        initializeCoins();
+        fetchPrices();
+        setInterval(fetchPrices, REFRESH_INTERVAL_MS);
+        
+        // Log for debugging
+        console.log('CryptoLens initialized');
+        console.log('Tracking:', COINS.map(c => c.symbol).join(', '));
+    </script>
+</body>
+</html>
